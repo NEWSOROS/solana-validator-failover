@@ -2,304 +2,220 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Simple p2p Solana validator failovers. This tool helps automate _planned_ failovers. To automate _unexpected_ failovers, see [solana-validator-ha](https://github.com/SOL-Strategies/solana-validator-ha).
+**[README на русском](README.ru.md)**
 
-![solana-validator-failover](vhs/failover-passive-to-active.png)
+P2P tool for **planned** Solana validator switchovers. For **automatic** (unplanned) failovers, see [solana-validator-ha](https://github.com/SOL-Strategies/solana-validator-ha).
 
-A QUIC-based program that orchestrates safe, fast failovers between Solana validators. [This post](https://blog.solstrategies.io/quic-solana-validator-failovers-738d712ac737) covers the background in more detail. In summary, it coordinates three steps across both nodes:
+QUIC-based program that orchestrates safe, fast identity switches between Solana validators:
 
 1. Active validator sets identity to passive
-2. Tower file synced from active to passive validator
+2. Tower file synced via QUIC from active to passive
 3. Passive validator sets identity to active
 
-Convenience safety checks, bells, and whistles:
+## Two modes
 
-- Check and wait for validator health before failing over
-- Wait for the estimated best slot time to failover
-- Wait for no leader slots in the near future (if things go sideways — make it hurt a little less by not being leader 😬)
-- Post-failover vote credit rank monitoring
-- Pre/post failover hooks
-- Customizable validator client and set identity commands to support (most) any validator client
+| Command | Purpose | Runs on |
+|---------|---------|---------|
+| `switchover` | **Orchestrator** — discovers cluster state, runs preflight checks, executes switchover via SSH | Any single node |
+| `run` | **Low-level** QUIC client/server — called by `switchover` automatically, or run manually on both nodes | Both nodes separately |
 
-## How it works
+## Quick Start
 
-Running `solana-validator-failover run` on either node **automatically detects the node's role** (active or passive) from gossip and does the right thing:
+### Orchestrated switchover (recommended, v0.2.0+)
 
-- **Passive node** → starts a QUIC server, waits for the active node to connect
-- **Active node** → connects to the passive peer as a QUIC client and orchestrates the handover
+Run from **any** node in the cluster. The binary discovers roles via RPC, checks health, and orchestrates everything via SSH:
 
-**You run the command on both nodes.** Start the passive node first so it is listening when the active node connects.
+```bash
+# Interactive menu — shows dashboard, preflight, lets you choose action
+solana-validator-failover switchover -c config.yaml
 
-![solana-validator-failover passive-to-active](vhs/failover-passive-to-active.gif)
+# Dry-run — simulates everything without switching identity
+solana-validator-failover switchover -c config.yaml --dry-run --yes
 
-![solana-validator-failover active-to-passive](vhs/failover-active-to-passive.gif)
-
-## Usage
-
-```shell
-# 1. Run on the passive node first — starts a server waiting for the active node
-solana-validator-failover run --not-a-drill
-
-# 2. Run on the active node — connects to the passive peer and initiates the handover
-solana-validator-failover run
+# Live switchover — no prompts, executes immediately
+solana-validator-failover switchover -c config.yaml --yes
 ```
 
-By default, `run` executes in **dry-run mode**: the tower file is synced and all timings are recorded, but set-identity commands are not executed. This is useful for gauging failover speed under real network conditions without committing. Pass `--not-a-drill` on the **passive** node to execute for real.
+### Manual switchover (low-level)
 
-> ⚠️ **Who you run this as matters.** The user must have:
-> - Permission to run set-identity commands for the validator
-> - Read/write permission on the tower file — verify inherited permissions after a dry-run
+Run `run` on **both nodes** separately. Start passive first:
 
-### Flags
+```bash
+# Step 1: On PASSIVE node — starts QUIC server, waits for active
+solana-validator-failover run -c config.yaml --yes --not-a-drill
 
-#### `run` flags
-
-| Flag                           | Default | Description                                                                                                                                                       |
-| ------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--not-a-drill`                | `false` | Execute failover for real. Effective on the passive node; ignored on the active node.                                                                             |
-| `--no-wait-for-healthy`        | `false` | Skip waiting for the node to report healthy at `<rpc_address>/health`.                                                                                            |
-| `--no-min-time-to-leader-slot` | `false` | Skip waiting for the active node to have no leader slots in the next `min_time_to_leader_slot` window. Effective on the active node; ignored on the passive node. |
-| `--skip-tower-sync`            | `false` | Skip syncing the tower file from active to passive. The passive node must not have an existing tower file.                                                        |
-| `-y, --yes`                    | `false` | Skip all interactive confirmation prompts.                                                                                                                        |
-| `--to-peer <name\|ip>`         | —       | When run on the active node, auto-select a peer by its configured name or IP address, skipping the interactive selector. Ignored on the passive node.             |
-
-#### Persistent flags
-
-| Flag                      | Default                                                      | Description                                   |
-| ------------------------- | ------------------------------------------------------------ | --------------------------------------------- |
-| `-c, --config <path>`     | `~/solana-validator-failover/solana-validator-failover.yaml` | Path to config file.                          |
-| `-l, --log-level <level>` | `info`                                                       | Log level (`debug`, `info`, `warn`, `error`). |
-
-### Peer selection
-
-The active node **always prompts you to select a peer**, even when only one is configured. Use `--to-peer <name|ip>` to skip the prompt — useful for scripted or non-interactive failovers:
-
-```shell
-# Skip peer selection prompt by name
-solana-validator-failover run --to-peer backup-validator-region-x
-
-# Fully non-interactive (skip peer selection and all confirmation prompts)
-solana-validator-failover run --to-peer backup-validator-region-x --yes
+# Step 2: On ACTIVE node — connects as QUIC client, initiates handover
+solana-validator-failover run -c config.yaml --yes --to-peer backup-1 --not-a-drill
 ```
+
+> Without `--not-a-drill`, `run` executes in **dry-run mode**: tower synced, timings recorded, identity NOT switched.
 
 ## Installation
 
-Build from source or download the built package for your system from the [releases](https://github.com/SOL-Strategies/solana-validator-failover/releases) page. If your arch isn't listed, ping us.
+Download from [releases](https://github.com/NEWSOROS/solana-validator-failover/releases):
 
-## Prerequisites
+```bash
+VERSION=0.2.0
+wget https://github.com/NEWSOROS/solana-validator-failover/releases/download/v${VERSION}/solana-validator-failover-${VERSION}-linux-amd64.gz
+gunzip solana-validator-failover-${VERSION}-linux-amd64.gz
+chmod +x solana-validator-failover-${VERSION}-linux-amd64
+sudo mv solana-validator-failover-${VERSION}-linux-amd64 /usr/local/bin/solana-validator-failover
+```
 
-1. **A (preferably private) low-latency UDP route** between active and passive validators. Latency varies across setups, so YMMV, though QUIC should give a good head start.
-
-2. **Some focus and appreciation of what you're doing** — these can be high pucker factor operations regardless of tooling.
+Or build from source: `make build`
 
 ## Configuration
 
 ```yaml
-# default --config=~/solana-validator-failover/solana-validator-failover.yaml
 validator:
-  # path of validator program to use when issuing set-identity commands
-  # default: agave-validator
   bin: agave-validator
-
-  # (required) cluster this validator runs on
-  #            well-known clusters: mainnet-beta, testnet, devnet, localnet
-  #            any other value is treated as a custom cluster (requires cluster_rpc_url)
   cluster: mainnet-beta
+  public_ip: "1.2.3.4"
+  hostname: "primary-1"
 
-  # (required for custom clusters) RPC URL for the cluster - must support getClusterNodes.
-  # For well-known clusters the built-in URL is used. For custom clusters, or if you need
-  # to override the default (e.g. to use a private RPC), set this explicitly.
-  # cluster_rpc_url: <solana_compatible_rpc_endpoint>
-
-  # average slot duration, used to estimate time to next leader slot
-  # default: 400ms
-  # average_slot_duration: 400ms
-
-  # this validator's identities
   identities:
-    # (required or active_pubkey) path to identity file to use when ACTIVE
-    # when supplied with active_pubkey, active takes precedence
-    active: /home/solana/active-validator-identity.json
-    # (required or active) base58 encoded pubkey to use when ACTIVE
-    # when supplied with active, active takes precedence
-    active_pubkey: 111111ActivePubkey1111111111111111111111111
-    # (required) path to identity file to use when PASSIVE
-    # when supplied with passive_pubkey, passive takes precedence
-    passive: /home/solana/passive-validator-identity.json
-    # (required or passive) base58 encoded pubkey to use when PASSIVE
-    # when supplied with passive, passive takes precedence
-    passive_pubkey: 111111PassivePubkey1111111111111111111111111
+    active: /path/to/validator-keypair.json
+    active_pubkey: "ABC123..."
+    passive: /path/to/validator-unstaked-keypair.json
+    passive_pubkey: "DEF456..."
 
-  # (required) ledger directory made available to set-identity command templates
-  ledger_dir: /mnt/ledger
-
-  # local rpc address of node this program runs on
-  # default: http://localhost:8899
+  ledger_dir: /mnt/solana/ledger
   rpc_address: http://localhost:8899
 
-  # tower file config
   tower:
-    # (required) directory hosting the tower file
-    dir: /mnt/accounts/tower
-
-    # when passive, delete the tower file if one exists before starting a failover server
-    # default: false
+    dir: /mnt/solana/ramdisk/tower
     auto_empty_when_passive: false
-
-    # golang template to identify the tower file within tower.dir
-    # available to the template is an .Identities object
-    # default: "tower-1_9-{{ .Identities.Active.PubKey }}.bin"
     file_name_template: "tower-1_9-{{ .Identities.Active.PubKey }}.bin"
 
-  # failover configuration
   failover:
-    # failover server config (runs on passive node taking over from active node)
     server:
-      # default: 9898 - QUIC (udp) port to listen on
       port: 9898
+    min_time_to_leader_slot: 5m
 
-    # golang template strings for command to set identity to active/passive
-    # use this to set the appropriate command/args for your validator as required
-    # available to this template will be:
-    # {{ .Bin }}        - a resolved absolute path to the binary referenced in validator.bin
-    # {{ .Identities }} - an object that has Active/Passive properties referencing
-    #                     the loaded identities from validator.identities
-    # {{ .LedgerDir }}  - a resolved absolute path to validator.ledger_dir
-    # defaults shown below
+    peers:
+      backup-1:
+        address: "5.6.7.8:9898"
+        ssh_user: solana          # for switchover command (default: solana)
+        ssh_key: ~/.ssh/id_ed25519 # for switchover command (required)
+        ssh_port: 22              # for switchover command (default: 22)
+
+    switchover:
+      max_slot_lag: 100                           # max slot difference (default: 100)
+      failover_binary: solana-validator-failover  # binary on remote nodes (default)
+
     set_identity_active_cmd_template: "{{ .Bin }} --ledger {{ .LedgerDir }} set-identity {{ .Identities.Active.KeyFile }} --require-tower"
     set_identity_passive_cmd_template: "{{ .Bin }} --ledger {{ .LedgerDir }} set-identity {{ .Identities.Passive.KeyFile }}"
 
-    # failover peers - keys are vanity names shown in program output and usable with --to-peer
-    # configure one peer per passive validator you may want to fail over to
-    peers:
-      backup-validator-region-x:
-        # host and port to connect to failover server
-        address: backup-validator-region-x.some-private.zone:9898
-
-    # duration string representing the minimum amount of time before the active node is due to
-    # be the leader; if the failover is initiated below this threshold it will wait until this
-    # window has passed before connecting to the passive peer
-    # default: 5m
-    min_time_to_leader_slot: 5m
-
-    # post-failover monitoring config
     monitor:
-      # monitoring of credit rank pre and post failover
       credit_samples:
-        # number of credit samples to take
-        # default: 5
         count: 5
-        # interval duration between samples
-        # default: 5s
         interval: 5s
 
-    # (optional) Hooks to run pre/post failover and when active or passive.
-    # They will run sequentially in the order they are declared.
-    #
-    # Template interpolation is supported in command, args, and environment variable values using Go text/template syntax.
-    # The template data structure provides access to failover state and node information (see template fields below).
-    #
-    # The specified command program will receive environment variables:
-    # 1. Custom environment variables from the 'environment' map (if specified)
-    # 2. Standard SOLANA_VALIDATOR_FAILOVER_* variables (set last, will override custom if duplicated there)
-    #
-    # Available template fields for interpolation in command, args, and environment values:
-    # ------------------------------------------------------------------------------------------------------------
-    # {{ .IsDryRunFailover }}                    - bool: true if this is a dry run failover
-    # {{ .ThisNodeRole }}                        - string: "active" or "passive"
-    # {{ .ThisNodeName }}                        - string: hostname of this node
-    # {{ .ThisNodePublicIP }}                    - string: public IP of this node
-    # {{ .ThisNodeActiveIdentityPubkey }}        - string: pubkey this node uses when active
-    # {{ .ThisNodeActiveIdentityKeyFile }}       - string: path to keyfile from validator.identities.active
-    # {{ .ThisNodePassiveIdentityPubkey }}       - string: pubkey this node uses when passive
-    # {{ .ThisNodePassiveIdentityKeyFile }}      - string: path to keyfile from validator.identities.passive
-    # {{ .ThisNodeClientVersion }}               - string: gossip-reported solana validator client semantic version for this node
-    # {{ .ThisNodeRPCAddress }}                  - string: local validator RPC URL from config (validator.rpc_address)
-    # {{ .PeerNodeRole }}                        - string: "active" or "passive"
-    # {{ .PeerNodeName }}                        - string: hostname of peer node
-    # {{ .PeerNodePublicIP }}                    - string: public IP of peer node
-    # {{ .PeerNodeActiveIdentityPubkey }}        - string: pubkey peer uses when active
-    # {{ .PeerNodePassiveIdentityPubkey }}       - string: pubkey peer uses when passive
-    # {{ .PeerNodeClientVersion }}               - string: gossip-reported solana validator client semantic version for peer node
-    #
-    # Standard environment variables passed to hook commands (SOLANA_VALIDATOR_FAILOVER_*):
-    # ------------------------------------------------------------------------------------------------------------
-    # SOLANA_VALIDATOR_FAILOVER_IS_DRY_RUN_FAILOVER                     = "true|false"
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_ROLE                          = "active|passive"
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_NAME                          = hostname of this node
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_PUBLIC_IP                     = public IP of this node
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_ACTIVE_IDENTITY_PUBKEY        = pubkey this node uses when active
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_ACTIVE_IDENTITY_KEYPAIR_FILE  = path to keyfile from validator.identities.active
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_PASSIVE_IDENTITY_PUBKEY       = pubkey this node uses when passive
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_PASSIVE_IDENTITY_KEYPAIR_FILE = path to keyfile from validator.identities.passive
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_CLIENT_VERSION                = gossip-reported solana validator client semantic version for this node
-    # SOLANA_VALIDATOR_FAILOVER_THIS_NODE_RPC_ADDRESS                   = local validator RPC URL from config (validator.rpc_address)
-    # SOLANA_VALIDATOR_FAILOVER_PEER_NODE_ROLE                          = "active|passive"
-    # SOLANA_VALIDATOR_FAILOVER_PEER_NODE_NAME                          = hostname of peer
-    # SOLANA_VALIDATOR_FAILOVER_PEER_NODE_PUBLIC_IP                     = public IP of peer
-    # SOLANA_VALIDATOR_FAILOVER_PEER_NODE_ACTIVE_IDENTITY_PUBKEY        = pubkey peer uses when active
-    # SOLANA_VALIDATOR_FAILOVER_PEER_NODE_PASSIVE_IDENTITY_PUBKEY       = pubkey peer uses when passive
-    # SOLANA_VALIDATOR_FAILOVER_PEER_NODE_CLIENT_VERSION                = gossip-reported solana validator client semantic version for peer node
+    # hooks: (optional) see full example below
+```
+
+## Commands
+
+### `switchover`
+
+Orchestrates the entire switchover from a single node:
+
+1. **Discovery** — queries local RPC + remote peers via SSH, detects ACTIVE/PASSIVE roles
+2. **Dashboard** — renders cluster state table (nodes, IPs, roles, health, slots, slot lag)
+3. **Preflight** — validates health, slot lag, SSH connectivity
+4. **Menu** — interactive action selection (or auto-proceed with `--yes`)
+5. **Execute** — launches `run` on both sides (locally + via SSH)
+6. **Verify** — re-queries cluster state after switchover
+
+**Auto-detected execution cases:**
+
+| Running from | QUIC Server | QUIC Client |
+|-------------|-------------|-------------|
+| PASSIVE node | Local subprocess | SSH → active node (background) |
+| ACTIVE node | SSH → passive node (background) | Local subprocess |
+| External node | SSH → passive node (background) | SSH → active node (streaming) |
+
+```
+switchover [flags]
+  --dry-run          Simulate without switching identities
+  -y, --yes          Skip interactive prompts
+  --to-peer <name>   Target peer name
+```
+
+### `run`
+
+Low-level QUIC failover. Auto-detects role from gossip:
+
+- **Passive node** → starts QUIC server, waits for active to connect
+- **Active node** → connects to passive peer as QUIC client
+
+```
+run [flags]
+  --not-a-drill                Execute for real (default: dry-run)
+  --no-wait-for-healthy        Skip health check wait
+  --no-min-time-to-leader-slot Skip leader slot timing wait
+  --skip-tower-sync            Skip tower file sync
+  -y, --yes                    Skip confirmation prompts
+  --to-peer <name|ip>          Auto-select peer (active node only)
+```
+
+### Global flags
+
+```
+  -c, --config <path>      Config file (default: ~/solana-validator-failover/solana-validator-failover.yaml)
+  -l, --log-level <level>  Log level: debug, info, warn, error (default: info)
+```
+
+## Ports
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 9898 | UDP | QUIC failover communication |
+
+## Prerequisites
+
+- Low-latency UDP route between validators (for QUIC)
+- Passwordless SSH between nodes (for `switchover` command)
+- Identity keypairs deployed on each node
+
+## Hooks
+
+Pre/post failover hooks with Go template interpolation. Available template fields:
+
+| Field | Description |
+|-------|-------------|
+| `{{ .IsDryRunFailover }}` | bool: true if dry run |
+| `{{ .ThisNodeRole }}` | "active" or "passive" |
+| `{{ .ThisNodeName }}` | hostname of this node |
+| `{{ .ThisNodePublicIP }}` | public IP of this node |
+| `{{ .ThisNodeActiveIdentityPubkey }}` | active identity pubkey |
+| `{{ .ThisNodePassiveIdentityPubkey }}` | passive identity pubkey |
+| `{{ .ThisNodeClientVersion }}` | validator client version |
+| `{{ .ThisNodeRPCAddress }}` | local RPC URL |
+| `{{ .PeerNode* }}` | same fields for the peer node |
+
+```yaml
     hooks:
-      # hooks to run before failover - errors in pre hooks optionally abort failover
       pre:
-        # run before failover when validator is active
         when_active:
-          - name: x # vanity name
-            command: ./scripts/some_script.sh # command to run (supports template interpolation)
-            args: ["--role={{ .ThisNodeRole }}", "{{ .ThisNodeName }}"] # args support template interpolation
-            must_succeed: true # aborts failover on failure
-            environment: # optional map of custom environment variables (values support template interpolation)
-              MY_VAR: "{{ .ThisNodeName }}"
+          - name: my-hook
+            command: ./scripts/notify.sh
+            args: ["--role={{ .ThisNodeRole }}"]
+            must_succeed: true  # aborts failover on failure
+            environment:
               PEER_IP: "{{ .PeerNodePublicIP }}"
-        # run before failover when validator is passive
-        when_passive:
-          - name: x # vanity name
-            command: ./scripts/some_script.sh # command to run (supports template interpolation)
-            args: ["--role={{ .ThisNodeRole }}", "{{ .ThisNodeName }}"] # args support template interpolation
-            must_succeed: true # aborts failover on failure
-            environment: # optional map of custom environment variables (values support template interpolation)
-              MY_VAR: "{{ .ThisNodeName }}"
-              PEER_IP: "{{ .PeerNodePublicIP }}"
-      # hooks to run after failover - errors in post hooks are displayed but do not affect the failover result
       post:
-        # run after failover when validator is active
         when_active:
-          - name: x # vanity name
-            command: ./scripts/some_script.sh # command to run (supports template interpolation)
-            args: ["--role={{ .ThisNodeRole }}", "{{ .ThisNodeName }}"] # args support template interpolation
-            environment: # optional map of custom environment variables (values support template interpolation)
-              MY_VAR: "{{ .ThisNodeName }}"
-              PEER_IP: "{{ .PeerNodePublicIP }}"
-        # run after failover when validator is passive
-        when_passive:
-          - name: x # vanity name
-            command: ./scripts/some_script.sh # command to run (supports template interpolation)
-            args: ["--role={{ .ThisNodeRole }}", "{{ .ThisNodeName }}"] # args support template interpolation
-            environment: # optional map of custom environment variables (values support template interpolation)
-              MY_VAR: "{{ .ThisNodeName }}"
-              PEER_IP: "{{ .PeerNodePublicIP }}"
+          - name: notify-done
+            command: ./scripts/notify.sh
+            args: ["switchover-complete"]
 ```
 
-## Developing
+## Development
 
-```shell
-# build in docker with live-reload on file changes
-make dev
+```bash
+make dev           # Docker dev environment with live-reload
+make test          # Run tests
+make build         # Build locally
+make build-compose # Build via Docker (multi-arch)
 ```
-
-## Building
-
-```shell
-# build locally
-make build
-
-# or build from docker
-make build-compose
-```
-
-## Laundry/wish list
-
-- [ ] TLS config
-- [ ] Refactor to make e2e testing easier - current setup not optimal
-- [ ] Rollbacks (to the extent it's possible)
