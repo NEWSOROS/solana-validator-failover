@@ -47,6 +47,12 @@ const (
 
 	// DefaultSetIdentityActiveCmdTemplate is the default set identity active command template for the validator
 	DefaultSetIdentityActiveCmdTemplate = "{{ .Bin }} --ledger {{ .LedgerDir }} set-identity {{ .Identities.Active.KeyFile }} --require-tower"
+
+	// DefaultSwitchoverMaxSlotLag is the default max slot lag for switchover pre-flight
+	DefaultSwitchoverMaxSlotLag = 100
+
+	// DefaultSwitchoverFailoverBinary is the default binary name for remote failover execution
+	DefaultSwitchoverFailoverBinary = "solana-validator-failover"
 )
 
 var (
@@ -102,6 +108,8 @@ func (s *SolanaValidatorFailover) LoadFromConfigFile(configPath string) (err err
 	v.SetDefault("validator.failover.set_identity_active_cmd_template", DefaultSetIdentityActiveCmdTemplate)
 	v.SetDefault("validator.failover.set_identity_passive_cmd_template", DefaultSetIdentityPassiveCmdTemplate)
 	v.SetDefault("validator.tower.file_name_template", DefaultTowerFileNameTemplate)
+	v.SetDefault("validator.failover.switchover.max_slot_lag", DefaultSwitchoverMaxSlotLag)
+	v.SetDefault("validator.failover.switchover.failover_binary", DefaultSwitchoverFailoverBinary)
 
 	// Read config file
 	logger.Debug().Str("config_file", loadConfigPath).Msg("loading")

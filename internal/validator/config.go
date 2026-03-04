@@ -38,12 +38,23 @@ type FailoverConfig struct {
 	Monitor                       MonitorConfig       `mapstructure:"monitor"`
 	Peers                         PeersConfig         `mapstructure:"peers"`
 	Server                        ServerConfig        `mapstructure:"server"`
+	Switchover                    SwitchoverConfig    `mapstructure:"switchover"`
 	IsDryRun                      bool
 }
 
 // PeersConfig is the configuration for the peers
 type PeersConfig map[string]struct {
 	Address string `mapstructure:"address"`
+	SSHUser string `mapstructure:"ssh_user"` // SSH username for switchover (default: "solana")
+	SSHKey  string `mapstructure:"ssh_key"`  // path to SSH private key for switchover
+	SSHPort int    `mapstructure:"ssh_port"` // SSH port for switchover (default: 22)
+	RPCURL  string `mapstructure:"rpc_url"`  // peer's local RPC URL (default: "http://127.0.0.1:8899")
+}
+
+// SwitchoverConfig holds switchover-specific configuration
+type SwitchoverConfig struct {
+	MaxSlotLag     int    `mapstructure:"max_slot_lag"`     // max acceptable slot difference (default: 100)
+	FailoverBinary string `mapstructure:"failover_binary"`  // path to solana-validator-failover on remote (default: "solana-validator-failover")
 }
 
 // MonitorConfig holds the configuration for a failover monitor

@@ -41,7 +41,11 @@ type Peers map[string]Peer
 // Peer is a peer in the failover configuration
 type Peer struct {
 	Name    string
-	Address string
+	Address string // QUIC address (host:port)
+	SSHUser string // SSH username for switchover
+	SSHKey  string // path to SSH private key
+	SSHPort int    // SSH port
+	RPCURL  string // peer's local RPC URL
 }
 
 // BinMetadata is the metadata for a validator client
@@ -475,13 +479,33 @@ func (v *Validator) configurePeers(cfg PeersConfig) (err error) {
 				name,
 			)
 		}
+		// Apply SSH defaults for switchover
+		sshUser := peer.SSHUser
+		if sshUser == "" {
+			sshUser = "solana"
+		}
+		sshPort := peer.SSHPort
+		if sshPort == 0 {
+			sshPort = 22
+		}
+		rpcURL := peer.RPCURL
+		if rpcURL == "" {
+			rpcURL = "http://127.0.0.1:8899"
+		}
+
 		v.Peers[name] = Peer{
 			Name:    name,
 			Address: peer.Address,
+			SSHUser: sshUser,
+			SSHKey:  peer.SSHKey,
+			SSHPort: sshPort,
+			RPCURL:  rpcURL,
 		}
 		log.Debug().
 			Str("name", name).
 			Str("address", peer.Address).
+			Str("ssh_user", sshUser).
+			Int("ssh_port", sshPort).
 			Msg("registered peer")
 	}
 
