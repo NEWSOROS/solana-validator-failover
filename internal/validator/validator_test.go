@@ -580,9 +580,7 @@ func TestNewFromConfig_Success(t *testing.T) {
 			MinimumTimeToLeaderSlot:       "5m",
 			SetIdentityActiveCmdTemplate:  "{{ .Bin }} set-identity {{ .Identities.Active.KeyFile }}",
 			SetIdentityPassiveCmdTemplate: "{{ .Bin }} set-identity {{ .Identities.Passive.KeyFile }}",
-			Peers: map[string]struct {
-				Address string `mapstructure:"address"`
-			}{
+			Peers: PeersConfig{
 				"peer1": {Address: "192.168.1.100:9898"},
 				"peer2": {Address: "192.168.1.101:9898"},
 			},

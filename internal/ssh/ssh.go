@@ -157,7 +157,7 @@ func IsReachable(cfg ClientConfig) bool {
 	}
 
 	// Quick TCP connectivity check first
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return false
