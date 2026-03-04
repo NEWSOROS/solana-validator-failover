@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/rs/zerolog/log"
 	internalssh "github.com/sol-strategies/solana-validator-failover/internal/ssh"
 	"github.com/sol-strategies/solana-validator-failover/internal/style"
@@ -671,14 +672,14 @@ func (o *SwitchoverOrchestrator) RenderDashboard(state *ClusterState) string {
 
 	// Custom style function for role coloring
 	styleFunc := func(row, col int) lipgloss.Style {
-		if row == 0 { // header
+		if row == table.HeaderRow {
 			return style.TableHeaderStyle
 		}
 		baseStyle := style.TableCellStyle
 
 		// Color the Role column
-		if col == 2 && row > 0 && row-1 < len(rows) {
-			role := rows[row-1][2]
+		if col == 2 && row >= 0 && row < len(rows) {
+			role := rows[row][2]
 			switch role {
 			case "ACTIVE":
 				return baseStyle.Foreground(style.ColorActive).Bold(true)
@@ -689,8 +690,8 @@ func (o *SwitchoverOrchestrator) RenderDashboard(state *ClusterState) string {
 			}
 		}
 		// Color the Health column
-		if col == 3 && row > 0 && row-1 < len(rows) {
-			health := rows[row-1][3]
+		if col == 3 && row >= 0 && row < len(rows) {
+			health := rows[row][3]
 			switch health {
 			case "ok":
 				return baseStyle.Foreground(style.ColorActive)
