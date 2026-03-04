@@ -51,7 +51,8 @@ type ClusterState struct {
 type SwitchoverOrchestrator struct {
 	peers           Peers
 	switchoverCfg   SwitchoverConfig
-	localName       string // this node's name (matched from peers by hostname)
+	localName       string // this node's name (from config hostname)
+	localIP         string // this node's public IP
 	localRPCAddress string
 	activePubkey    string
 	passivePubkey   string
@@ -146,7 +147,7 @@ func NewSwitchoverOrchestrator(cfg *Config, configPath string) (*SwitchoverOrche
 		o.switchoverCfg.FailoverBinary = "solana-validator-failover"
 	}
 
-	// Detect local hostname and match to a peer name
+	// Detect local node identity — use config hostname (not peer matching)
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = ""
@@ -154,23 +155,8 @@ func NewSwitchoverOrchestrator(cfg *Config, configPath string) (*SwitchoverOrche
 	if cfg.Hostname != "" {
 		hostname = cfg.Hostname
 	}
-
-	// Try to match hostname to a peer name
-	for name := range o.peers {
-		if name == hostname {
-			o.localName = name
-			break
-		}
-	}
-	// If hostname didn't match, check if it's the start of a peer name
-	if o.localName == "" {
-		for name := range o.peers {
-			if strings.HasPrefix(name, hostname) || strings.HasPrefix(hostname, name) {
-				o.localName = name
-				break
-			}
-		}
-	}
+	o.localName = hostname
+	o.localIP = cfg.PublicIP
 
 	log.Debug().
 		Str("local_name", o.localName).
@@ -504,14 +490,9 @@ func (o *SwitchoverOrchestrator) printNodeStatus(node *NodeState, suffix string)
 func (o *SwitchoverOrchestrator) discoverLocalNode() (*NodeState, error) {
 	node := &NodeState{
 		Name:    o.localName,
+		IP:      o.localIP,
 		IsLocal: true,
 		SSHOk:   true,
-	}
-
-	// Find IP from peer config
-	if peer, ok := o.peers[o.localName]; ok {
-		host, _, _ := net.SplitHostPort(peer.Address)
-		node.IP = host
 	}
 
 	identity, err := o.getIdentityLocal()
