@@ -520,16 +520,14 @@ func (o *SwitchoverOrchestrator) discoverLocalNode() (*NodeState, error) {
 }
 
 func (o *SwitchoverOrchestrator) determineRole(identityPubkey string) string {
-	switch identityPubkey {
-	case o.activePubkey:
-		return "ACTIVE"
-	case "":
+	switch {
+	case identityPubkey == "":
 		return "DOWN"
+	case identityPubkey == o.activePubkey:
+		return "ACTIVE"
 	default:
-		if identityPubkey == o.passivePubkey {
-			return "PASSIVE"
-		}
-		return "UNKNOWN"
+		// Any non-active identity is passive (each node has its own unstaked keypair)
+		return "PASSIVE"
 	}
 }
 
