@@ -331,8 +331,8 @@ func (v *Validator) configureTowerFile(cfg TowerConfig) error {
 		Bool("tower_file_auto_delete_when_passive", v.TowerFileAutoDeleteWhenPassive).
 		Msg("tower file auto delete when passive set")
 
-	// tower dir must exist
-	towerDir, err := utils.ResolveAndValidateDir(cfg.Dir)
+	// tower dir — resolve path, create if missing (tmpfs ramdisk loses dirs on reboot)
+	towerDir, err := utils.ResolveAndEnsureDir(cfg.Dir)
 	if err != nil {
 		return err
 	}

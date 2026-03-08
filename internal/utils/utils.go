@@ -276,6 +276,22 @@ func ResolveAndValidateDir(dir string) (resolvedDir string, err error) {
 	return resolvedDir, nil
 }
 
+// ResolveAndEnsureDir resolves the path and creates the directory if it does not exist.
+// This is needed for paths on tmpfs (ramdisk) which lose their contents on reboot.
+func ResolveAndEnsureDir(dir string) (resolvedDir string, err error) {
+	resolvedDir, err = ResolvePath(dir)
+	if err != nil {
+		return "", fmt.Errorf("invalid dir: %s, must be a valid path: %w", dir, err)
+	}
+	if !DirExists(resolvedDir) {
+		log.Info().Str("dir", resolvedDir).Msg("directory does not exist, creating it")
+		if err = os.MkdirAll(resolvedDir, 0750); err != nil {
+			return "", fmt.Errorf("failed to create directory %s: %w", resolvedDir, err)
+		}
+	}
+	return resolvedDir, nil
+}
+
 // SortStringMap sorts a map by key
 func SortStringMap(m map[string]string) map[string]string {
 	keys := make([]string, 0, len(m))
