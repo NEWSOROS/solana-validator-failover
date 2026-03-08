@@ -277,6 +277,23 @@ func (o *SwitchoverOrchestrator) Switchover(params SwitchoverParams) error {
 		return fmt.Errorf("could not identify both ACTIVE and PASSIVE nodes")
 	}
 
+	// Override PassiveNode if --to-peer is specified
+	if params.ToPeer != "" {
+		if node, exists := state.Nodes[params.ToPeer]; exists {
+			if node.Role == "PASSIVE" {
+				log.Info().
+					Str("to-peer", params.ToPeer).
+					Str("prev", state.PassiveNode).
+					Msg("--to-peer override: switching passive target")
+				state.PassiveNode = params.ToPeer
+			} else {
+				return fmt.Errorf("--to-peer %q is not passive (role: %s)", params.ToPeer, node.Role)
+			}
+		} else {
+			return fmt.Errorf("--to-peer %q not found in cluster nodes", params.ToPeer)
+		}
+	}
+
 	// 4. Determine action
 	choice := 0 // 1=live, 2=dry-run
 	if params.DryRun {
